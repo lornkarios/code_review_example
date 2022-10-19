@@ -2,81 +2,65 @@
 
 class Example
 {
-    protected function getCacheKeys()
+    function InitCache($TTL, $uniq_str, $initdir = false, $basedir = "cache")
     {
-        $resultCacheKeys = array(
-            'IBLOCK_ID',
-            'ID',
-            'IBLOCK_SECTION_ID',
-            'NAME',
-            'LIST_PAGE_URL',
-            'CANONICAL_PAGE_URL',
-            'SECTION',
-            'IPROPERTY_VALUES',
-            'TIMESTAMP_X',
-            'BACKGROUND_IMAGE',
-            'USE_CATALOG_BUTTONS'
-        );
+        /** @global CMain $APPLICATION */
+        global $APPLICATION, $USER;
+        if($initdir === false)
+            $initdir = $APPLICATION->GetCurDir();
 
-        $this->initAdditionalCacheKeys($resultCacheKeys);
+        $this->basedir = BX_PERSONAL_ROOT."/".$basedir."/";
+        $this->initdir = $initdir;
+        $this->filename = "/".CPageCache::GetPath($uniq_str);
+        $this->TTL = $TTL;
+        $this->uniq_str = $uniq_str;
 
-        if (
-            $this->arParams['SET_TITLE']
-            || $this->arParams['ADD_ELEMENT_CHAIN']
-            || $this->arParams['SET_BROWSER_TITLE'] === 'Y'
-            || $this->arParams['SET_META_KEYWORDS'] === 'Y'
-            || $this->arParams['SET_META_DESCRIPTION'] === 'Y'
-        ) {
-            $this->arResult['META_TAGS'] = array();
-            $resultCacheKeys[] = 'META_TAGS';
+        if($TTL<=0)
+            return false;
 
-            if ($this->arParams['SET_TITLE']) {
-                $this->arResult['META_TAGS']['TITLE'] = $this->arResult['IPROPERTY_VALUES']['ELEMENT_PAGE_TITLE'] != ''
-                    ? $this->arResult['IPROPERTY_VALUES']['ELEMENT_PAGE_TITLE']
-                    : $this->arResult['NAME'];
+        if(is_object($USER) && $USER->CanDoOperation('cache_control'))
+        {
+            if(isset($_GET["clear_cache_session"]))
+            {
+                if(strtoupper($_GET["clear_cache_session"])=="Y")
+                    $_SESSION["SESS_CLEAR_CACHE"] = "Y";
+                elseif(strlen($_GET["clear_cache_session"]) > 0)
+                    unset($_SESSION["SESS_CLEAR_CACHE"]);
             }
 
-            if ($this->arParams['ADD_ELEMENT_CHAIN']) {
-                $this->arResult['META_TAGS']['ELEMENT_CHAIN'] = $this->arResult['IPROPERTY_VALUES']['ELEMENT_PAGE_TITLE'] != ''
-                    ? $this->arResult['IPROPERTY_VALUES']['ELEMENT_PAGE_TITLE']
-                    : $this->arResult['NAME'];
-            }
-
-            if ($this->arParams['SET_BROWSER_TITLE'] === 'Y') {
-                $browserTitle = Collection::firstNotEmpty(
-                    $this->arResult['PROPERTIES'], array($this->arParams['BROWSER_TITLE'], 'VALUE'),
-                    $this->arResult, $this->arParams['BROWSER_TITLE'],
-                    $this->arResult['IPROPERTY_VALUES'], 'ELEMENT_META_TITLE'
-                );
-                $this->arResult['META_TAGS']['BROWSER_TITLE'] = is_array($browserTitle)
-                    ? implode(' ', $browserTitle)
-                    : $browserTitle;
-                unset($browserTitle);
-            }
-
-            if ($this->arParams['SET_META_KEYWORDS'] === 'Y') {
-                $metaKeywords = Collection::firstNotEmpty(
-                    $this->arResult['PROPERTIES'], array($this->arParams['META_KEYWORDS'], 'VALUE'),
-                    $this->arResult['IPROPERTY_VALUES'], 'ELEMENT_META_KEYWORDS'
-                );
-                $this->arResult['META_TAGS']['KEYWORDS'] = is_array($metaKeywords)
-                    ? implode(' ', $metaKeywords)
-                    : $metaKeywords;
-                unset($metaKeywords);
-            }
-
-            if ($this->arParams['SET_META_DESCRIPTION'] === 'Y') {
-                $metaDescription = Collection::firstNotEmpty(
-                    $this->arResult['PROPERTIES'], array($this->arParams['META_DESCRIPTION'], 'VALUE'),
-                    $this->arResult['IPROPERTY_VALUES'], 'ELEMENT_META_DESCRIPTION'
-                );
-                $this->arResult['META_TAGS']['DESCRIPTION'] = is_array($metaDescription)
-                    ? implode(' ', $metaDescription)
-                    : $metaDescription;
-                unset($metaDescription);
-            }
+            if(isset($_GET["clear_cache"]) && strtoupper($_GET["clear_cache"])=="Y")
+                return false;
         }
 
-        return $resultCacheKeys;
+        if(isset($_SESSION["SESS_CLEAR_CACHE"]) && $_SESSION["SESS_CLEAR_CACHE"] == "Y")
+            return false;
+
+        if(!$this->_cache->read($this->content, $this->basedir, $this->initdir, $this->filename, $this->TTL))
+            return false;
+
+//		$GLOBALS["CACHE_STAT_BYTES"] += $this->_cache->read;
+        if (\Bitrix\Main\Data\Cache::getShowCacheStat())
+        {
+            $read = 0;
+            $path = '';
+            if ($this->_cache instanceof \Bitrix\Main\Data\ICacheEngineStat)
+            {
+                $read = $this->_cache->getReadBytes();
+                $path = $this->_cache->getCachePath();
+            }
+            elseif ($this->_cache instanceof \ICacheBackend)
+            {
+                /** @noinspection PhpUndefinedFieldInspection */
+                $read = $this->_cache->read;
+
+                /** @noinspection PhpUndefinedFieldInspection */
+                $path = $this->_cache->path;
+            }
+
+            \Bitrix\Main\Diag\CacheTracker::addCacheStatBytes($read);
+            \Bitrix\Main\Diag\CacheTracker::add($read, $path, $this->basedir, $this->initdir, $this->filename, "R");
+        }
+        return true;
     }
+
 }
